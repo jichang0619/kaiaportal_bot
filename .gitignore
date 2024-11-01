@@ -1,2 +1,9 @@
 # env
 .env
+
+# docs
+*.json
+*.log
+
+# cashe
+*.pyc

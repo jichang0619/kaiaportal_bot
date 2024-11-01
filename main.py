@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import os
 import asyncio
 from commands import total_command, tvl_command, calc_command
+from data_collector import KAIADataCollector
 
 # .env 파일 로드
 load_dotenv()
@@ -33,16 +34,23 @@ class TelegramBot:
         await self.application.start()
         await self.application.updater.start_polling()
 
+
 async def main():
     kaia_bot = TelegramBot("kaia_bot", token, chat_id)
+    
     kaia_bot.add_handler("total", total_command)
     kaia_bot.add_handler("tvl", tvl_command)
     kaia_bot.add_handler("calc", calc_command)
 
-    await kaia_bot.start()
+    # 데이터 수집기 초기화
+    collector = KAIADataCollector()
 
-    while True:
-        await asyncio.sleep(1)
+    # 봇과 데이터 수집기를 동시에 실행
+    await asyncio.gather(
+        kaia_bot.start(),
+        collector.run_collector(interval_seconds=3600),  # 1시간마다 데이터 수집
+        return_exceptions=True
+    )
 
 if __name__ == '__main__':
     asyncio.run(main())
