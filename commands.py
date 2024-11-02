@@ -5,6 +5,7 @@ import requests
 from datetime import datetime, timedelta
 import re
 import pytz
+import json
 
 def format_number(value):
     if value >= 1_000_000_000:
@@ -226,6 +227,157 @@ async def calc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
             text=f"Input error: {str(e)}",
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"Error occurred: {str(e)}",
+            parse_mode='Markdown'
+        )
+
+async def average_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not context.args or len(context.args) != 1:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="Usage: /average YYYY-MM-DD\nExample: /average 2024-11-02",
+                parse_mode='Markdown'
+            )
+            return
+
+        date = context.args[0]
+        
+        # Load daily stats
+        try:
+            with open('kaia_daily_stats.json', 'r') as f:
+                stats = json.load(f)
+        except FileNotFoundError:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="No statistics data available.",
+                parse_mode='Markdown'
+            )
+            return
+
+        daily_stats = stats.get('daily_stats', {}).get(date)
+        if not daily_stats:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"No data available for {date}",
+                parse_mode='Markdown'
+            )
+            return
+
+        message = f"""
+📊 *Daily Average Stats for {date}*
+
+🏢 *General Pool*
+• Average Points/Hour: {format_number(daily_stats['general_hourly_average'])}
+
+🌟 *FGP Pool*
+• Average Points/Hour: {format_number(daily_stats['fgp_hourly_average'])}
+
+📝 *Details*
+• Data Points: {daily_stats['data_points']}
+• Time Span: {daily_stats['time_span_hours']:.2f} hours
+• First Update: {daily_stats['first_update']}
+• Last Update: {daily_stats['last_update']}
+"""
+        
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=message,
+            parse_mode='Markdown'
+        )
+
+    except Exception as e:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"Error occurred: {str(e)}",
+            parse_mode='Markdown'
+        )
+async def compare_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        data = get_kaia_pool_info()
+        if isinstance(data, str):
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=data,
+                parse_mode='Markdown'
+            )
+            return
+
+        # 오늘 날짜의 통계 데이터 로드
+        today = datetime.now().strftime('%Y-%m-%d')
+        try:
+            with open('kaia_daily_stats.json', 'r') as f:
+                stats = json.load(f)
+                daily_stats = stats.get('daily_stats', {}).get(today)
+                if not daily_stats:
+                    await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=f"No statistics available for today ({today})",
+                        parse_mode='Markdown'
+                    )
+                    return
+        except FileNotFoundError:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="Statistics file not found",
+                parse_mode='Markdown'
+            )
+            return
+
+        remaining_hours, time_str = get_remaining_time()
+        
+        # 오늘의 평균 시간당 포인트 사용
+        general_hourly = daily_stats['general_hourly_average']
+        fgp_hourly = daily_stats['fgp_hourly_average']
+        
+        # 시간당 보상 비율 계산
+        general_hourly_reward_ratio = 10_000_000 / general_hourly
+        fgp_hourly_reward_ratio = 15_000_000 / fgp_hourly
+        hourly_ratio = general_hourly_reward_ratio / fgp_hourly_reward_ratio
+        
+        # 총 예상 포인트 계산
+        general_total = data['generalPoint'] + (general_hourly * remaining_hours)
+        fgp_total = data['fgpPoint'] + (fgp_hourly * remaining_hours)
+        
+        # 총 보상 비율 계산
+        general_total_reward_ratio = 10_000_000 / general_total
+        fgp_total_reward_ratio = 15_000_000 / fgp_total
+        total_ratio = general_total_reward_ratio / fgp_total_reward_ratio
+
+        message = f"""
+⚖️ *Pool Efficiency Comparison*
+
+📊 *Current Points*
+• General Pool: {format_number(data['generalPoint'])} points (10M KAIA)
+• FGP Pool: {format_number(data['fgpPoint'])} points (15M KAIA)
+
+⏱️ *Today's Average Hourly Points and Rewards*
+• General: {format_number(general_hourly)} points/hour
+• FGP: {format_number(fgp_hourly)} points/hour
+• Ratio (General : FGP) = 1 : {hourly_ratio:.3f}
+• {'🟢 General Pool More Efficient' if hourly_ratio > 1 else '🟢 FGP Pool More Efficient'}
+
+📈 *Expected Total Points and Rewards*
+• General: {format_number(general_total)} points ({format_number(general_total_reward_ratio)} KAIA per point)
+• FGP: {format_number(fgp_total)} points ({format_number(fgp_total_reward_ratio)} KAIA per point)
+• Ratio (General : FGP) = 1 : {total_ratio:.3f}
+• {'🟢 General Pool More Efficient' if total_ratio > 1 else '🟢 FGP Pool More Efficient'}
+
+📆 Stats from: {today}
+⏰ Data Points: {daily_stats['data_points']}
+⌛ Time Left: {time_str}
+
+Note: Lower ratio indicates better efficiency
+"""
+        
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=message,
             parse_mode='Markdown'
         )
     except Exception as e:

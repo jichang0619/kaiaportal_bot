@@ -107,13 +107,15 @@ class KAIADataCollector:
             return None
 
     def is_data_changed(self, new_data: Dict) -> bool:
-        """데이터 변경 여부 확인"""
+        """데이터 변경 여부 확인 - 업데이트 시간이나 시간당 포인트가 변경된 경우"""
         if not self.last_data or not self.last_data.get('data_points'):
             return True
         
         try:
             last_point = self.last_data['data_points'][-1]
-            return last_point['updatedAt'] != new_data['updatedAt']
+            return (last_point['updatedAt'] != new_data['updatedAt'] or
+                    last_point['generalPointPerHour'] != new_data['generalPointPerHour'] or
+                    last_point['fgpPointPerHour'] != new_data['fgpPointPerHour'])
         except (KeyError, IndexError):
             return True
 
