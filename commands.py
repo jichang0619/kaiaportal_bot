@@ -60,7 +60,7 @@ def calculate_reward(my_points, my_points_per_hour, pool_type, total_points, poi
     
     # 보상 계산
     reward = (my_final_points / pool_final_points) * total_reward
-    hourly_reward = (my_points_per_hour / pool_final_points) * total_reward
+    hourly_reward = (my_points_per_hour / points_per_hour) * total_reward
     
     return reward, hourly_reward
 
@@ -360,13 +360,13 @@ async def compare_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • General: {format_number(general_hourly)} points/hour
 • FGP: {format_number(fgp_hourly)} points/hour
 • Ratio (General : FGP) = 1 : {hourly_ratio:.3f}
-• {'🟢 General Pool More Efficient' if hourly_ratio > 1 else '🟢 FGP Pool More Efficient'}
+• {'🔴 General Pool More Efficient' if hourly_ratio > 1 else '🟢 FGP Pool More Efficient'}
 
 📈 *Expected Total Points and Rewards*
-• General: {format_number(general_total)} points ({format_number(general_total_reward_ratio)} KAIA per point)
-• FGP: {format_number(fgp_total)} points ({format_number(fgp_total_reward_ratio)} KAIA per point)
+• General: {format_number(general_total)} points 
+• FGP: {format_number(fgp_total)} points
 • Ratio (General : FGP) = 1 : {total_ratio:.3f}
-• {'🟢 General Pool More Efficient' if total_ratio > 1 else '🟢 FGP Pool More Efficient'}
+• {'🔴 General Pool More Efficient' if total_ratio > 1 else '🟢 FGP Pool More Efficient'}
 
 📆 Stats from: {today}
 ⏰ Data Points: {daily_stats['data_points']}
