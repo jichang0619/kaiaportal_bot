@@ -60,7 +60,7 @@ def calculate_reward(my_points, my_points_per_hour, pool_type, total_points, poi
     
     # 보상 계산
     reward = (my_final_points / pool_final_points) * total_reward
-    hourly_reward = (my_points_per_hour / points_per_hour) * total_reward
+    hourly_reward = (my_points_per_hour / pool_final_points) * total_reward
     
     return reward, hourly_reward
 
