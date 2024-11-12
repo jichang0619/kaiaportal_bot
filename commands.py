@@ -6,6 +6,39 @@ from datetime import datetime, timedelta
 import re
 import pytz
 import json
+import requests
+from typing import Dict, Tuple
+
+POOLS_CONFIG = {
+    "stKAIA : (stKAIA-KAIA LP)": {
+        "points_per_dollar": 4.32,
+        "tokens": ["stKAIA"]
+    },
+    "KAIA : (stKAIA-KAIA LP)": {
+        "points_per_dollar": 4.8,
+        "tokens": ["KAIA"]
+    },
+    "stKAIA (LST)": {
+        "points_per_dollar": 2.16,
+        "tokens": ["stKAIA"]
+    },
+    "USDT/USDC": {
+        "points_per_dollar": 3.984,
+        "tokens": ["USDT"]
+    },
+    "USDT (WETH-USDT 20%)": {
+        "points_per_dollar": 15.936,
+        "tokens": ["WETH", "USDT"]
+    },
+    "ETH (WETH-USDT 20%)": {
+        "points_per_dollar": 9.6,
+        "tokens": ["WETH", "USDT"]
+    },
+    "KRWO (KRWO-USDT LP)": {
+        "points_per_dollar": 3.984,
+        "tokens": ["KRWO", "USDT"]
+    }
+}
 
 def format_number(value):
     if value >= 1_000_000_000:
@@ -17,6 +50,17 @@ def format_number(value):
     else:
         return f"{value:,.2f}"
 
+def get_kaia_price() -> float:
+    """KAIA 토큰의 현재 가격을 가져옴"""
+    try:
+        url = "https://api.swapscanner.io/v1/tokens/prices"
+        response = requests.get(url)
+        response.raise_for_status()
+        kaia_address = "0x0000000000000000000000000000000000000000"
+        return float(response.json().get(kaia_address, 0))
+    except Exception as e:
+        return f"Error fetching KAIA price: {str(e)}"
+    
 def get_kaia_pool_info():
     url = "https://api-portal.kaia.io/api/v1/mission/total"
     try:
@@ -380,6 +424,144 @@ Note: Lower ratio indicates better efficiency
             text=message,
             parse_mode='Markdown'
         )
+    except Exception as e:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"Error occurred: {str(e)}",
+            parse_mode='Markdown'
+        )
+
+def calculate_pool_returns(points_per_dollar: float, pool_data: Dict, kaia_price: float) -> Dict[str, Tuple[float, float]]:
+    """
+    General과 FGP 풀 각각에 대한 APY와 달러 수익을 계산
+    
+    Args:
+        points_per_dollar: 1달러당 얻는 포인트
+        pool_data: 현재 풀 데이터
+        kaia_price: KAIA 토큰의 현재 가격
+    
+    Returns:
+        Dict with 'general' and 'fgp' keys, each containing (apy_percentage, dollar_return)
+    """
+    remaining_hours, _ = get_remaining_time()
+    if remaining_hours <= 0:
+        return {'general': (0, 0), 'fgp': (0, 0)}
+    
+    results = {}
+    hours_in_year = 8760
+    
+    # General Pool 계산 
+    total_points_general = pool_data['generalPoint'] + (pool_data['generalPointPerHour'] * remaining_hours)
+    my_points_general = points_per_dollar * remaining_hours
+    kaia_reward_general = (my_points_general / total_points_general) * 10_000_000
+    dollar_return_general = kaia_reward_general * kaia_price # 남은 시간 동안 예상 이율
+    apy_general = (dollar_return_general * (hours_in_year / remaining_hours)) * 100
+    
+    # FGP Pool 계산
+    total_points_fgp = pool_data['fgpPoint'] + (pool_data['fgpPointPerHour'] * remaining_hours)
+    my_points_fgp = points_per_dollar * remaining_hours
+    kaia_reward_fgp = (my_points_fgp / total_points_fgp) * 15_000_000
+    dollar_return_fgp = kaia_reward_fgp * kaia_price
+    apy_fgp = ((dollar_return_fgp) * (hours_in_year / remaining_hours)) * 100
+    
+    return {
+        'general': (apy_general, dollar_return_general),
+        'fgp': (apy_fgp, dollar_return_fgp)
+    }
+
+async def apy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        # 현재 풀 데이터 가져오기
+        pool_data = get_kaia_pool_info()
+        if isinstance(pool_data, str):
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=pool_data,
+                parse_mode='Markdown'
+            )
+            return
+            
+        # KAIA 가격 가져오기
+        kaia_price = get_kaia_price()
+        if kaia_price == 0:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="Unable to fetch KAIA price",
+                parse_mode='Markdown'
+            )
+            return
+            
+        remaining_hours, time_str = get_remaining_time()
+        
+        # FGP Pool 정보 (15M KAIA)
+        fgp_message = "📊 *FGP POOL ROI (15M KAIA)*\n\n"
+        fgp_message += f"💰 *KAIA Price*: ${kaia_price:.4f}\n"
+        fgp_message += f"⌛ {time_str}\n\n"
+        fgp_message += f"📈 *Current Pool Stats*\n"
+        fgp_message += f"• Total Points: {format_number(pool_data['fgpPoint'])}\n"
+        fgp_message += f"• Points/Hour: {format_number(pool_data['fgpPointPerHour'])}\n\n"
+        fgp_message += "*Investment Returns:*\n"
+
+        # General Pool 정보 (10M KAIA)
+        general_message = "📊 *GENERAL POOL ROI (10M KAIA)*\n\n"
+        general_message += f"💰 *KAIA Price*: ${kaia_price:.4f}\n"
+        general_message += f"⌛ {time_str}\n\n"
+        general_message += f"📈 *Current Pool Stats*\n"
+        general_message += f"• Total Points: {format_number(pool_data['generalPoint'])}\n"
+        general_message += f"• Points/Hour: {format_number(pool_data['generalPointPerHour'])}\n\n"
+        general_message += "*Investment Returns:*\n"
+        
+        # 모든 풀 구성에 대해 FGP와 General 각각 계산
+        for pool_name, config in POOLS_CONFIG.items():
+            # $1 투자시 리턴
+            returns = calculate_pool_returns(
+                config['points_per_dollar'],
+                pool_data,
+                kaia_price
+            )
+            
+            # $100 투자시 리턴
+            returns_100 = {
+                'general': (returns['general'][0], returns['general'][1] * 100),
+                'fgp': (returns['fgp'][0], returns['fgp'][1] * 100)
+            }
+            
+            # FGP Pool 메시지에 추가
+            fgp_info = (
+                f"\n*{pool_name}*\n"
+                f"• Points per $: {config['points_per_dollar']:.3f}\n"
+                f"• APY: {returns['fgp'][0]:.2f}%\n"
+                f"• $100 Investment:\n"
+                f"  - Return: ${returns_100['fgp'][1]:.2f}\n"
+                f"  - KAIA: {(returns_100['fgp'][1]/kaia_price):.2f}\n"
+            )
+            fgp_message += fgp_info
+
+            # General Pool 메시지에 추가
+            general_info = (
+                f"\n*{pool_name}*\n"
+                f"• Points per $: {config['points_per_dollar']:.3f}\n"
+                f"• APY: {returns['general'][0]:.2f}%\n"
+                f"• $100 Investment:\n"
+                f"  - Return: ${returns_100['general'][1]:.2f}\n"
+                f"  - KAIA: {(returns_100['general'][1]/kaia_price):.2f}\n"
+            )
+            general_message += general_info
+        
+        # FGP Pool 메시지 먼저 전송
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=fgp_message,
+            parse_mode='Markdown'
+        )
+        
+        # General Pool 메시지 전송
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=general_message,
+            parse_mode='Markdown'
+        )
+        
     except Exception as e:
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
