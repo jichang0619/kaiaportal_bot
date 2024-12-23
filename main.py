@@ -4,7 +4,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler
 from dotenv import load_dotenv
 import os
 import asyncio
-from commands import total_command, tvl_command, calc_command, average_command, compare_command, apy_command
+from commands import total_command, tvl_command, calc_command, average_command, compare_command, apy_command, hf_command
 from data_collector import KAIADataCollector
 
 # .env 파일 로드
@@ -42,6 +42,7 @@ async def main():
     kaia_bot.add_handler("average", average_command)
     kaia_bot.add_handler("compare", compare_command)
     kaia_bot.add_handler("apy", apy_command)
+    kaia_bot.add_handler("hf", hf_command)
 
     # 데이터 수집기 초기화
     collector = KAIADataCollector()

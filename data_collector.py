@@ -98,7 +98,7 @@ class KAIADataCollector:
                 async with session.get(self.api_url) as response:
                     if response.status == 200:
                         data = await response.json()
-                        return data['data']
+                        return data['result']
                     else:
                         logging.error(f"API request failed with status {response.status}")
                         return None

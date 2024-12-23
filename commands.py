@@ -8,6 +8,7 @@ import pytz
 import json
 import requests
 from typing import Dict, Tuple
+import os
 
 POOLS_CONFIG = {
     "stKAIA : (stKAIA-KAIA LP)": {
@@ -18,26 +19,26 @@ POOLS_CONFIG = {
         "points_per_dollar": 4.8,
         "tokens": ["KAIA"]
     },
-    "stKAIA (LST)": {
-        "points_per_dollar": 2.16,
-        "tokens": ["stKAIA"]
-    },
+    # "stKAIA (LST)": {
+    #     "points_per_dollar": 2.16,
+    #     "tokens": ["stKAIA"]
+    # },
     "USDT/USDC": {
         "points_per_dollar": 3.984,
         "tokens": ["USDT"]
     },
     "USDT (WETH-USDT 20%)": {
-        "points_per_dollar": 15.936,
+        "points_per_dollar": 13.2,
         "tokens": ["WETH", "USDT"]
     },
     "ETH (WETH-USDT 20%)": {
-        "points_per_dollar": 9.6,
+        "points_per_dollar": 7.96,
         "tokens": ["WETH", "USDT"]
-    },
-    "KRWO (KRWO-USDT LP)": {
-        "points_per_dollar": 3.984,
-        "tokens": ["KRWO", "USDT"]
     }
+    # "KRWO (KRWO-USDT LP)": {
+    #     "points_per_dollar": 3.984,
+    #     "tokens": ["KRWO", "USDT"]
+    # }
 }
 
 def format_number(value):
@@ -66,7 +67,7 @@ def get_kaia_pool_info():
     try:
         response = requests.get(url)
         response.raise_for_status()
-        return response.json()['data']
+        return response.json()['result']
     except requests.RequestException as e:
         return f"데이터를 가져오는 데 실패했습니다: {str(e)}"
 
@@ -100,7 +101,7 @@ def calculate_reward(my_points, my_points_per_hour, pool_type, total_points, poi
     pool_final_points = total_points + (points_per_hour * remaining_hours)
     
     # 풀 타입에 따른 총 보상량 설정
-    total_reward = 10_000_000 if pool_type == "general" else 15_000_000  # KAIA 개수
+    total_reward = 15_000_000 if pool_type == "general" else 22_500_000  # KAIA 개수
     
     # 보상 계산
     reward = (my_final_points / pool_final_points) * total_reward
@@ -251,11 +252,11 @@ async def calc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • Current Points: {format_number(my_points)}
 • Points per Hour: {format_number(my_points_per_hour)}
 
-🏢 *General Pool (10M KAIA)*
+🏢 *General Pool (15M KAIA)*
 • Hourly Reward: {format_number(general_hourly)} KAIA/hour
 • Total Expected Reward: {format_number(general_reward)} KAIA
 
-🌟 *FGP Pool (15M KAIA)*
+🌟 *FGP Pool (22.5M KAIA)*
 • Hourly Reward: {format_number(fgp_hourly)} KAIA/hour
 • Total Expected Reward: {format_number(fgp_reward)} KAIA
 
@@ -380,8 +381,8 @@ async def compare_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         fgp_hourly = daily_stats['fgp_hourly_average']
         
         # 시간당 보상 비율 계산
-        general_hourly_reward_ratio = 10_000_000 / general_hourly
-        fgp_hourly_reward_ratio = 15_000_000 / fgp_hourly
+        general_hourly_reward_ratio = 15_000_000 / general_hourly
+        fgp_hourly_reward_ratio = 22_500_000 / fgp_hourly
         hourly_ratio = general_hourly_reward_ratio / fgp_hourly_reward_ratio
         
         # 총 예상 포인트 계산
@@ -389,16 +390,36 @@ async def compare_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         fgp_total = data['fgpPoint'] + (fgp_hourly * remaining_hours)
         
         # 총 보상 비율 계산
-        general_total_reward_ratio = 10_000_000 / general_total
-        fgp_total_reward_ratio = 15_000_000 / fgp_total
+        general_total_reward_ratio = 15_000_000 / general_total
+        fgp_total_reward_ratio = 22_500_000 / fgp_total
         total_ratio = general_total_reward_ratio / fgp_total_reward_ratio
+        
+        # 보상 차이 계산
+        Ratio_Flag = 0
+        Ratio_Flag_expect = 0
+        if ((data['generalPoint'] * 1.5 - data['fgpPoint']) > 0):
+            Ratio_Flag = 1
+        else:
+            Ratio_Flag = 2
+        
+        if ((general_total * 1.5 - fgp_total) > 0):
+            Ratio_Flag_expect = 1
+        else:
+            Ratio_Flag_expect = 2
+            
+        Ratio_calc = abs(data['generalPoint'] * 1.5 - data['fgpPoint'])
+        Ratio_calc_expect = abs(general_total * 1.5 - fgp_total)
 
         message = f"""
 ⚖️ *Pool Efficiency Comparison*
 
 📊 *Current Points*
-• General Pool: {format_number(data['generalPoint'])} points (10M KAIA)
-• FGP Pool: {format_number(data['fgpPoint'])} points (15M KAIA)
+• General Pool: {format_number(data['generalPoint'])} points (15M KAIA)
+• FGP Pool: {format_number(data['fgpPoint'])} points (22.5M KAIA)
+• {'🔴 General Pool Less Point' if Ratio_Flag > 1 else '🟢 FGP Pool Less Point'}
+• {'🔴 General Pool Less Point (Exp)' if Ratio_Flag_expect > 1 else '🟢 FGP Pool Less Point'}
+• Ratio Calc : {format_number(Ratio_calc)}
+• Ratio Calc Expect : {format_number(Ratio_calc_expect)}
 
 ⏱️ *Today's Average Hourly Points and Rewards*
 • General: {format_number(general_hourly)} points/hour
@@ -453,14 +474,14 @@ def calculate_pool_returns(points_per_dollar: float, pool_data: Dict, kaia_price
     # General Pool 계산 
     total_points_general = pool_data['generalPoint'] + (pool_data['generalPointPerHour'] * remaining_hours)
     my_points_general = points_per_dollar * remaining_hours
-    kaia_reward_general = (my_points_general / total_points_general) * 10_000_000
+    kaia_reward_general = (my_points_general / total_points_general) * 15_000_000
     dollar_return_general = kaia_reward_general * kaia_price # 남은 시간 동안 예상 이율
     apy_general = (dollar_return_general * (hours_in_year / remaining_hours)) * 100
     
     # FGP Pool 계산
     total_points_fgp = pool_data['fgpPoint'] + (pool_data['fgpPointPerHour'] * remaining_hours)
     my_points_fgp = points_per_dollar * remaining_hours
-    kaia_reward_fgp = (my_points_fgp / total_points_fgp) * 15_000_000
+    kaia_reward_fgp = (my_points_fgp / total_points_fgp) * 22_500_000
     dollar_return_fgp = kaia_reward_fgp * kaia_price
     apy_fgp = ((dollar_return_fgp) * (hours_in_year / remaining_hours)) * 100
     
@@ -493,8 +514,8 @@ async def apy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         remaining_hours, time_str = get_remaining_time()
         
-        # FGP Pool 정보 (15M KAIA)
-        fgp_message = "📊 *FGP POOL ROI (15M KAIA)*\n\n"
+        # FGP Pool 정보 (22.5M KAIA)
+        fgp_message = "📊 *FGP POOL ROI (22.5M KAIA)*\n\n"
         fgp_message += f"💰 *KAIA Price*: ${kaia_price:.4f}\n"
         fgp_message += f"⌛ {time_str}\n\n"
         fgp_message += f"📈 *Current Pool Stats*\n"
@@ -502,8 +523,8 @@ async def apy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         fgp_message += f"• Points/Hour: {format_number(pool_data['fgpPointPerHour'])}\n\n"
         fgp_message += "*Investment Returns:*\n"
 
-        # General Pool 정보 (10M KAIA)
-        general_message = "📊 *GENERAL POOL ROI (10M KAIA)*\n\n"
+        # General Pool 정보 (15M KAIA)
+        general_message = "📊 *GENERAL POOL ROI (15M KAIA)*\n\n"
         general_message += f"💰 *KAIA Price*: ${kaia_price:.4f}\n"
         general_message += f"⌛ {time_str}\n\n"
         general_message += f"📈 *Current Pool Stats*\n"
@@ -567,4 +588,88 @@ async def apy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=update.effective_chat.id,
             text=f"Error occurred: {str(e)}",
             parse_mode='Markdown'
+        )
+
+def get_token_prices() -> tuple:
+    """Get cmETH and FBTC prices from CoinMarketCap API"""
+    url = "https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/latest"
+    headers = {
+        'X-CMC_PRO_API_KEY': os.environ.get('CMC_API_KEY')
+    }
+    
+    params = {
+        'symbol': 'CMETH,FBTC',
+        'convert': 'USD'
+    }
+    
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        data = response.json()
+        eth_price = float(data['data']['CMETH'][0]['quote']['USD']['price'])
+        btc_price = float(data['data']['FBTC'][0]['quote']['USD']['price'])
+        return eth_price, btc_price
+    else:
+        raise Exception(f"API request failed with status {response.status_code}")
+
+def calculate_hf_prices_cmeth(collateral_amount: float, debt_amount: float) -> tuple:
+    """Calculate prices at different HF levels"""
+    price_120 = (1.20 * debt_amount * 1.1) / (collateral_amount * 0.8)
+    price_110 = (1.10 * debt_amount * 1.1) / (collateral_amount * 0.8)
+    price_105 = (1.05 * debt_amount * 1.1) / (collateral_amount * 0.8)
+    price_100 = (1.00 * debt_amount * 1.1) / (collateral_amount * 0.8)
+    
+    return price_120, price_110, price_105, price_100
+
+def calculate_hf_prices_fbtc(collateral_amount: float, debt_amount: float) -> tuple:
+    """Calculate prices at different HF levels"""
+    price_120 = (1.20 * debt_amount * 1.1) / (collateral_amount * 0.7)
+    price_110 = (1.10 * debt_amount * 1.1) / (collateral_amount * 0.7)
+    price_105 = (1.05 * debt_amount * 1.1) / (collateral_amount * 0.7)
+    price_100 = (1.00 * debt_amount * 1.1) / (collateral_amount * 0.7)
+    
+    return price_120, price_110, price_105, price_100
+
+async def hf_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        eth_price, btc_price = get_token_prices()
+        
+        # cmETH position
+        cmeth_collateral = 92.48
+        cmeth_debt = 208000
+        current_hf_eth = (cmeth_collateral * eth_price * 0.8) / (cmeth_debt * 1.1)
+        eth_120, eth_110, eth_105, eth_100 = calculate_hf_prices_cmeth(cmeth_collateral, cmeth_debt)
+        
+        # FBTC position
+        fbtc_collateral = 1.1989
+        fbtc_debt = 57100
+        current_hf_btc = (fbtc_collateral * btc_price * 0.7) / (fbtc_debt * 1.1)
+        btc_120, btc_110, btc_105, btc_100 = calculate_hf_prices_fbtc(fbtc_collateral, fbtc_debt)
+
+        message = f"""
+💫 *cmETH Position*
+• Current Price: ${eth_price:,.2f}
+• Current HF: {current_hf_eth:.3f}
+• HF 1.20: ${eth_120:,.2f}
+• HF 1.10: ${eth_110:,.2f}
+• HF 1.05: ${eth_105:,.2f}
+• HF 1.00: ${eth_100:,.2f}
+
+🌟 *FBTC Position*
+• Current Price: ${btc_price:,.2f}
+• Current HF: {current_hf_btc:.3f}
+• HF 1.20: ${btc_120:,.2f}
+• HF 1.10: ${btc_110:,.2f}
+• HF 1.05: ${btc_105:,.2f}
+• HF 1.00: ${btc_100:,.2f}
+"""
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=message,
+            parse_mode='Markdown'
+        )
+
+    except Exception as e:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"Error: {str(e)}"
         )
